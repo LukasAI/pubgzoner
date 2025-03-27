@@ -19,13 +19,13 @@ map_files = {
 }
 
 map_dimensions = {
-    "Erangel": (8160, 8160),
+    "Erangel": (3072, 3072),
     "Miramar": (3072, 3072),
-    "Sanhok": (4096, 4096),
-    "Vikendi": (6144, 6144),
-    "Deston": (8160, 8160),
-    "Taego": (8192, 8192),
-    "Rondo": (8000, 8000)
+    "Sanhok": (3072, 3072),
+    "Vikendi": (3072, 3072),
+    "Deston": (3072, 3072),
+    "Taego": (3072, 3072),
+    "Rondo": (3072, 3072)
 }
 
 maps_8x8 = ["Erangel", "Miramar", "Deston", "Taego", "Rondo"]
@@ -44,8 +44,8 @@ def get_radius(map_name, phase):
     return radius_by_phase[key][min(phase - 1, 8)]
 
 def get_scaled_radius(map_name, phase):
-    base_radius = get_scaled_radius(map_name, phase)  # in meters
-    scale_factor = 3072 / 8000  # assuming 3072px = 8km
+    base_radius = get_radius(map_name, phase)
+    scale_factor = 3072 / 8000
     return base_radius * scale_factor
 
 # Load heatmaps if available
@@ -68,14 +68,16 @@ if 'zones' not in st.session_state:
 # Sidebar controls
 st.sidebar.title("PUBG Zone Predictor")
 map_name = st.sidebar.selectbox("Select Map", list(map_files.keys()))
-x = st.sidebar.slider("X Coordinate", 0, map_dimensions[map_name][0], 4000)
-y = st.sidebar.slider("Y Coordinate", 0, map_dimensions[map_name][1], 4000)
-phase = len(st.session_state.zones) + 1
-avoid_red_zones = st.sidebar.checkbox("Avoid red heatmap zones (Erangel only)", value=True)
+x = st.sidebar.slider("X Coordinate", 0, map_dimensions[map_name][0], 1536)
+y = st.sidebar.slider("Y Coordinate", 0, map_dimensions[map_name][1], 1536)
+selected_phase = st.sidebar.selectbox("Which phase are you placing?", list(range(1, 10)))
+avoid_red_zones = st.sidebar.checkbox("Avoid red heatmap zones (Erangel/Miramar)", value=True)
 
 if st.sidebar.button("Set Zone"):
-    radius = get_radius(map_name, phase)
-    st.session_state.zones.append(((x, y), radius))
+    radius = get_scaled_radius(map_name, selected_phase)
+    while len(st.session_state.zones) < selected_phase:
+        st.session_state.zones.append(None)
+    st.session_state.zones[selected_phase - 1] = ((x, y), radius)
 
 if st.sidebar.button("Reset Zones"):
     st.session_state.zones = []
@@ -129,13 +131,14 @@ def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
     return avg_score > 0.3
 
 if st.sidebar.button("Predict Next Zone"):
-    if st.session_state.zones:
+    if any(st.session_state.zones):
         map_img = Image.open(map_files[map_name]).convert('RGB')
         img_array = np.array(map_img)
         width, height = map_dimensions[map_name]
 
-        last_center, last_radius = st.session_state.zones[-1]
-        current_phase = len(st.session_state.zones) + 1
+        last_idx = max(i for i, z in enumerate(st.session_state.zones) if z is not None)
+        last_center, last_radius = st.session_state.zones[last_idx]
+        current_phase = last_idx + 2
         new_radius = get_scaled_radius(map_name, current_phase)
 
         for attempt in range(30):
@@ -159,11 +162,13 @@ if st.sidebar.button("Predict Next Zone"):
 
             land_ok = is_zone_on_land(new_center, new_radius, img_array)
             heatmap_ok = True
-            if map_name == "Erangel" and avoid_red_zones and current_phase >= 4:
+            if map_name in ["Erangel", "Miramar"] and avoid_red_zones and current_phase >= 4:
                 heatmap_ok = is_zone_heatmap_acceptable(new_center, new_radius, map_name, width, height)
 
-            if land_ok and (not avoid_red_zones or heatmap_ok):
-                st.session_state.zones.append((new_center, new_radius))
+            if land_ok and heatmap_ok:
+                while len(st.session_state.zones) < current_phase:
+                    st.session_state.zones.append(None)
+                st.session_state.zones[current_phase - 1] = (new_center, new_radius)
                 break
 
 # Display Map and Circles
@@ -178,7 +183,10 @@ if os.path.exists(map_path):
     ax.set_ylim(height, 0)
 
     colors = ['blue', 'green', 'orange', 'red', 'purple', 'black', 'cyan', 'magenta']
-    for i, (center, radius) in enumerate(st.session_state.zones):
+    for i, zone in enumerate(st.session_state.zones):
+        if zone is None:
+            continue
+        center, radius = zone
         circle = patches.Circle(center, radius, fill=False, linewidth=2, edgecolor=colors[i % len(colors)])
         ax.add_patch(circle)
         ax.text(center[0], center[1], f'Z{i+1}', color=colors[i % len(colors)],
