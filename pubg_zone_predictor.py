@@ -29,23 +29,21 @@ zone_radii = {
 # App state
 if 'zones' not in st.session_state:
     st.session_state.zones = []
-if 'phase' not in st.session_state:
-    st.session_state.phase = 1
 
 # Sidebar controls
 st.sidebar.title("PUBG Zone Predictor")
 map_name = "Erangel"
-zone_number = st.sidebar.selectbox("Zone Number", list(zone_radii.keys()), index=0)
+zone_number = st.sidebar.selectbox("Zone Number (for radius only)", list(zone_radii.keys()), index=0)
 radius = zone_radii[zone_number]
 
 if st.sidebar.button("Reset Zones"):
     st.session_state.zones = []
-    st.session_state.phase = 1
 
 if st.sidebar.button("Predict Next Zone"):
     if st.session_state.zones:
         last_center, last_radius = st.session_state.zones[-1]
-        max_shift = last_radius * (0.4 if st.session_state.phase <= 4 else 0.6)
+        current_phase = len(st.session_state.zones) + 1
+        max_shift = last_radius * (0.4 if current_phase <= 4 else 0.6)
         bias_angle = random.uniform(0, 2 * math.pi)
         bias_distance = random.uniform(0.3, 1.0) * max_shift
         shift_x = bias_distance * math.cos(bias_angle)
@@ -57,7 +55,6 @@ if st.sidebar.button("Predict Next Zone"):
             max(0, min(map_dimensions[map_name][1], new_center[1]))
         )
         st.session_state.zones.append((new_center, new_radius))
-        st.session_state.phase += 1
 
 # Main UI - Map interaction
 st.title("📍 Click to Set Zone Center")
@@ -92,6 +89,6 @@ if os.path.exists(map_path):
             manual_y = st.slider("Y Coordinate", 0, height, height // 2)
         if st.button("Place Zone Here"):
             st.session_state.zones.append(((manual_x, manual_y), radius))
-            st.session_state.phase = zone_number + 1
+            st.experimental_rerun()
 else:
     st.error(f"Map image not found: {map_path}")
