@@ -43,6 +43,11 @@ def get_radius(map_name, phase):
     key = "8x8" if map_name in maps_8x8 else "6x6" if map_name in maps_6x6 else "4x4"
     return radius_by_phase[key][min(phase - 1, 8)]
 
+def get_scaled_radius(map_name, phase):
+    base_radius = get_scaled_radius(map_name, phase)  # in meters
+    scale_factor = 3072 / 8000  # assuming 3072px = 8km
+    return base_radius * scale_factor
+
 # Load heatmaps if available
 erangel_heatmap = None
 miramar_heatmap = None
@@ -131,7 +136,7 @@ if st.sidebar.button("Predict Next Zone"):
 
         last_center, last_radius = st.session_state.zones[-1]
         current_phase = len(st.session_state.zones) + 1
-        new_radius = get_radius(map_name, current_phase)
+        new_radius = get_scaled_radius(map_name, current_phase)
 
         for attempt in range(30):
             center_bias_x = width / 2 - last_center[0]
