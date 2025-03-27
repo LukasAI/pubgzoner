@@ -83,7 +83,7 @@ if os.path.exists(map_path):
 
     st.pyplot(fig, use_container_width=True)
 
-    # Coordinate click input (simplified: use two sliders to simulate click until real interactivity added)
+    # Coordinate click input (simulated click until real interactivity added)
     with st.expander("Manual Zone Placement"):
         col1, col2 = st.columns(2)
         with col1:
@@ -92,6 +92,6 @@ if os.path.exists(map_path):
             manual_y = st.slider("Y Coordinate", 0, height, height // 2)
         if st.button("Place Zone Here"):
             st.session_state.zones.append(((manual_x, manual_y), radius))
-            st.session_state.phase = zone_number
+            st.session_state.phase = zone_number + 1
 else:
     st.error(f"Map image not found: {map_path}")
