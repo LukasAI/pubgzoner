@@ -84,11 +84,11 @@ if os.path.exists(map_path):
     with st.expander("Manual Zone Placement"):
         col1, col2 = st.columns(2)
         with col1:
-            manual_x = st.slider("X Coordinate", 0, width, width // 2)
+            manual_x = st.slider("X Coordinate", 0, width, width // 2, key="x_slider")
         with col2:
-            manual_y = st.slider("Y Coordinate", 0, height, height // 2)
+            manual_y = st.slider("Y Coordinate", 0, height, height // 2, key="y_slider")
+
         if st.button("Place Zone Here"):
             st.session_state.zones.append(((manual_x, manual_y), radius))
-            st.experimental_rerun()
 else:
     st.error(f"Map image not found: {map_path}")
