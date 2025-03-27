@@ -72,7 +72,7 @@ if st.sidebar.button("Reset Zones"):
     st.session_state.zones = []
 
 def is_zone_on_land(center, radius, img_array):
-    cx, cy = int(center[0])
+    cx, cy = int(center[0]), int(center[1])
     rr = int(radius)
     count = 0
     water_count = 0
