@@ -48,6 +48,9 @@ erangel_heatmap = None
 if os.path.exists("erangel_heatmap.jpg"):
     heatmap_img = Image.open("erangel_heatmap.jpg").convert("L")
     erangel_heatmap = np.array(heatmap_img.resize((8160, 8160))) / 255.0
+    st.write("Heatmap shape:", erangel_heatmap.shape)
+else:
+    st.write("Heatmap not found.")
 
 # App state
 if 'zones' not in st.session_state:
@@ -116,9 +119,13 @@ if st.sidebar.button("Predict Next Zone"):
             new_y = max(0, min(height, last_center[1] + shift_y))
             new_center = (new_x, new_y)
 
-            # Check water + heatmap exclusion
             valid_land = is_zone_on_land(new_center, new_radius, img_array)
-            heatmap_score = 0 if erangel_heatmap is None or map_name != "Erangel" else 1 - erangel_heatmap[int(new_y), int(new_x)]
+            try:
+                heatmap_score = 0 if erangel_heatmap is None or map_name != "Erangel" else 1 - erangel_heatmap[int(new_y), int(new_x)]
+            except Exception as e:
+                st.error(f"Heatmap score error: {e}")
+                heatmap_score = 0
+
             if valid_land and (not avoid_red_zones or heatmap_score >= 0.3):
                 st.session_state.zones.append((new_center, new_radius))
                 break
@@ -134,7 +141,6 @@ if os.path.exists(map_path):
     ax.set_xlim(0, width)
     ax.set_ylim(height, 0)
 
-    # Overlay heatmap if enabled and Erangel
     if erangel_heatmap is not None and map_name == "Erangel" and avoid_red_zones:
         ax.imshow(erangel_heatmap, extent=[0, width, height, 0], cmap='jet', alpha=0.3)
 
