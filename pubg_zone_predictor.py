@@ -93,6 +93,28 @@ if st.sidebar.button("Set Zone"):
 if st.sidebar.button("Reset Zones"):
     st.session_state.zones = []
 
-# Remaining logic unchanged — prediction, land detection, heatmap scoring, and drawing
-# all operate on image pixel coordinates now, but sliders use meters.
-# Zones are placed using world meters, then converted to pixels for internal use.
+# Display Map and Circles
+fig, ax = plt.subplots(figsize=(8, 8))
+map_path = map_files[map_name]
+
+if os.path.exists(map_path):
+    map_img = Image.open(map_path)
+    width, height = map_dimensions[map_name]
+    ax.imshow(map_img, extent=[0, width, height, 0])
+    ax.set_xlim(0, width)
+    ax.set_ylim(height, 0)
+
+    colors = ['blue', 'green', 'orange', 'red', 'purple', 'black', 'cyan', 'magenta']
+    for i, zone in enumerate(st.session_state.zones):
+        if zone is None:
+            continue
+        center, radius = zone
+        circle = patches.Circle(center, radius, fill=False, linewidth=2, edgecolor=colors[i % len(colors)])
+        ax.add_patch(circle)
+        ax.text(center[0], center[1], f'Z{i+1}', color=colors[i % len(colors)],
+                fontsize=10, ha='center', va='center', weight='bold')
+
+    ax.set_title(f"{map_name} - Zones")
+    st.pyplot(fig)
+else:
+    st.error(f"Map image not found: {map_path}")
