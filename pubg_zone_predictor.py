@@ -141,7 +141,9 @@ if st.sidebar.button("Predict Next Zone"):
             new_center = (new_x, new_y)
 
             land_ok = is_zone_on_land(new_center, new_radius, img_array)
-            heatmap_ok = is_zone_heatmap_acceptable(new_center, new_radius, map_name, width, height)
+            heatmap_ok = True
+            if map_name == "Erangel" and avoid_red_zones and current_phase >= 4:
+                heatmap_ok = is_zone_heatmap_acceptable(new_center, new_radius, map_name, width, height)
 
             if land_ok and (not avoid_red_zones or heatmap_ok):
                 st.session_state.zones.append((new_center, new_radius))
