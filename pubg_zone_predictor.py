@@ -43,6 +43,12 @@ def get_radius(map_name, phase):
     key = "8x8" if map_name in maps_8x8 else "6x6" if map_name in maps_6x6 else "4x4"
     return radius_by_phase[key][min(phase - 1, 8)]
 
+# Load heatmap if Erangel
+erangel_heatmap = None
+if os.path.exists("erangel_heatmap.jpg"):
+    heatmap_img = Image.open("erangel_heatmap.jpg").convert("L")
+    erangel_heatmap = np.array(heatmap_img.resize((8160, 8160))) / 255.0
+
 # App state
 if 'zones' not in st.session_state:
     st.session_state.zones = []
@@ -53,6 +59,7 @@ map_name = st.sidebar.selectbox("Select Map", list(map_files.keys()))
 x = st.sidebar.slider("X Coordinate", 0, map_dimensions[map_name][0], 4000)
 y = st.sidebar.slider("Y Coordinate", 0, map_dimensions[map_name][1], 4000)
 phase = len(st.session_state.zones) + 1
+avoid_red_zones = st.sidebar.checkbox("Avoid Zone 4 Red Zones (Heatmap)", value=True)
 
 if st.sidebar.button("Set Zone"):
     radius = get_radius(map_name, phase)
@@ -73,12 +80,12 @@ def is_zone_on_land(center, radius, img_array):
                 px = cx + dx
                 py = cy + dy
                 if 0 <= px < w and 0 <= py < h:
-                    pixel = img_array[py, px]  # Y,X
+                    pixel = img_array[py, px]
                     r, g, b = pixel[:3]
                     count += 1
                     if b > 130 and b > r + 20 and b > g + 20:
                         water_count += 1
-    return water_count / count < 0.15  # Must be mostly land
+    return water_count / count < 0.15
 
 if st.sidebar.button("Predict Next Zone"):
     if st.session_state.zones:
@@ -109,7 +116,10 @@ if st.sidebar.button("Predict Next Zone"):
             new_y = max(0, min(height, last_center[1] + shift_y))
             new_center = (new_x, new_y)
 
-            if is_zone_on_land(new_center, new_radius, img_array):
+            # Check water + heatmap exclusion
+            valid_land = is_zone_on_land(new_center, new_radius, img_array)
+            heatmap_score = 0 if erangel_heatmap is None or map_name != "Erangel" else 1 - erangel_heatmap[int(new_y), int(new_x)]
+            if valid_land and (not avoid_red_zones or heatmap_score >= 0.3):
                 st.session_state.zones.append((new_center, new_radius))
                 break
 
@@ -123,6 +133,10 @@ if os.path.exists(map_path):
     ax.imshow(map_img, extent=[0, width, height, 0])
     ax.set_xlim(0, width)
     ax.set_ylim(height, 0)
+
+    # Overlay heatmap if enabled and Erangel
+    if erangel_heatmap is not None and map_name == "Erangel" and avoid_red_zones:
+        ax.imshow(erangel_heatmap, extent=[0, width, height, 0], cmap='jet', alpha=0.3)
 
     colors = ['blue', 'green', 'orange', 'red', 'purple', 'black', 'cyan', 'magenta']
     for i, (center, radius) in enumerate(st.session_state.zones):
