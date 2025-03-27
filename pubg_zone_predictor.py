@@ -28,16 +28,20 @@ map_dimensions = {
     "Rondo": (8000, 8000)
 }
 
-zone_radii = {
-    1: 1500,
-    2: 1000,
-    3: 650,
-    4: 400,
-    5: 250,
-    6: 150,
-    7: 100,
-    8: 50
+maps_8x8 = ["Erangel", "Miramar", "Deston", "Taego", "Rondo"]
+maps_6x6 = ["Vikendi"]
+maps_4x4 = ["Sanhok"]
+
+# Radii per phase by map size (from official PUBG specs)
+radius_by_phase = {
+    "8x8": [1997.05, 1198.25, 659.05, 362.45, 181.25, 90.6, 45.3, 22.65, 0],
+    "6x6": [1502.3, 901.4, 495.75, 272.65, 136.35, 68.15, 34.1, 17.05, 0],
+    "4x4": [999.3, 599.55, 329.75, 181.35, 90.7, 45.35, 22.65, 11.35, 0]
 }
+
+def get_radius(map_name, phase):
+    key = "8x8" if map_name in maps_8x8 else "6x6" if map_name in maps_6x6 else "4x4"
+    return radius_by_phase[key][min(phase - 1, 8)]
 
 # App state
 if 'zones' not in st.session_state:
@@ -46,17 +50,16 @@ if 'zones' not in st.session_state:
 # Sidebar controls
 st.sidebar.title("PUBG Zone Predictor")
 map_name = st.sidebar.selectbox("Select Map", list(map_files.keys()))
-zone_number = st.sidebar.selectbox("Zone Number", list(zone_radii.keys()))
 x = st.sidebar.slider("X Coordinate", 0, map_dimensions[map_name][0], 4000)
 y = st.sidebar.slider("Y Coordinate", 0, map_dimensions[map_name][1], 4000)
+phase = len(st.session_state.zones) + 1
 
 if st.sidebar.button("Set Zone"):
-    radius = zone_radii[zone_number]
+    radius = get_radius(map_name, phase)
     st.session_state.zones.append(((x, y), radius))
 
 if st.sidebar.button("Reset Zones"):
     st.session_state.zones = []
-
 
 def is_zone_on_land(center, radius, img_array):
     cx, cy = int(center[0]), int(center[1])
@@ -85,7 +88,7 @@ if st.sidebar.button("Predict Next Zone"):
 
         last_center, last_radius = st.session_state.zones[-1]
         current_phase = len(st.session_state.zones) + 1
-        new_radius = last_radius * 0.6
+        new_radius = get_radius(map_name, current_phase)
 
         for attempt in range(30):
             center_bias_x = width / 2 - last_center[0]
