@@ -88,15 +88,28 @@ def is_zone_on_land(center, radius, img_array):
                         water_count += 1
     return water_count / max(count, 1) < 0.15
 
-def get_heatmap_score(x, y, map_width, map_height):
+def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
     if erangel_heatmap is None or map_name != "Erangel":
-        return 1.0
+        return True
+    cx, cy = int(center[0]), int(center[1])
+    rr = int(radius)
     heatmap_h, heatmap_w = erangel_heatmap.shape
-    scaled_x = int((x / map_width) * heatmap_w)
-    scaled_y = int((y / map_height) * heatmap_h)
-    if 0 <= scaled_x < heatmap_w and 0 <= scaled_y < heatmap_h:
-        return 1.0 - erangel_heatmap[scaled_y, scaled_x]  # flip because red = exclusion
-    return 0.5
+    score_sum = 0
+    count = 0
+    for dx in range(-rr, rr + 1, 10):
+        for dy in range(-rr, rr + 1, 10):
+            if dx**2 + dy**2 <= rr**2:
+                px = cx + dx
+                py = cy + dy
+                if 0 <= px < map_width and 0 <= py < map_height:
+                    hx = int((px / map_width) * heatmap_w)
+                    hy = int((py / map_height) * heatmap_h)
+                    if 0 <= hx < heatmap_w and 0 <= hy < heatmap_h:
+                        heatmap_score = 1.0 - erangel_heatmap[hy, hx]
+                        score_sum += heatmap_score
+                        count += 1
+    avg_score = score_sum / max(count, 1)
+    return avg_score > 0.3
 
 if st.sidebar.button("Predict Next Zone"):
     if st.session_state.zones:
@@ -128,9 +141,9 @@ if st.sidebar.button("Predict Next Zone"):
             new_center = (new_x, new_y)
 
             land_ok = is_zone_on_land(new_center, new_radius, img_array)
-            heatmap_score = get_heatmap_score(new_x, new_y, width, height)
+            heatmap_ok = is_zone_heatmap_acceptable(new_center, new_radius, map_name, width, height)
 
-            if land_ok and (not avoid_red_zones or heatmap_score > 0.3):
+            if land_ok and (not avoid_red_zones or heatmap_ok):
                 st.session_state.zones.append((new_center, new_radius))
                 break
 
