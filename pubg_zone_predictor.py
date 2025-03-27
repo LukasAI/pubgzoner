@@ -20,7 +20,7 @@ map_files = {
 
 map_dimensions = {
     "Erangel": (8160, 8160),
-    "Miramar": (8160, 8160),
+    "Miramar": (3072, 3072),
     "Sanhok": (4096, 4096),
     "Vikendi": (6144, 6144),
     "Deston": (8160, 8160),
@@ -43,12 +43,16 @@ def get_radius(map_name, phase):
     key = "8x8" if map_name in maps_8x8 else "6x6" if map_name in maps_6x6 else "4x4"
     return radius_by_phase[key][min(phase - 1, 8)]
 
-# Load Erangel heatmap if available
+# Load heatmaps if available
 erangel_heatmap = None
+miramar_heatmap = None
 try:
     if os.path.exists("erangel_heatmap.jpg"):
         heatmap_img = Image.open("erangel_heatmap.jpg").convert("L")
         erangel_heatmap = np.array(heatmap_img) / 255.0
+    if os.path.exists("miramar_heatmap.jpg"):
+        heatmap_img = Image.open("miramar_heatmap.jpg").convert("L")
+        miramar_heatmap = np.array(heatmap_img) / 255.0
 except:
     pass
 
@@ -89,11 +93,19 @@ def is_zone_on_land(center, radius, img_array):
     return water_count / max(count, 1) < 0.15
 
 def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
-    if erangel_heatmap is None or map_name != "Erangel":
+    if map_name == "Erangel":
+        heatmap = erangel_heatmap
+    elif map_name == "Miramar":
+        heatmap = miramar_heatmap
+    else:
         return True
+
+    if heatmap is None:
+        return True
+
     cx, cy = int(center[0]), int(center[1])
     rr = int(radius)
-    heatmap_h, heatmap_w = erangel_heatmap.shape
+    heatmap_h, heatmap_w = heatmap.shape
     score_sum = 0
     count = 0
     for dx in range(-rr, rr + 1, 10):
@@ -105,7 +117,7 @@ def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
                     hx = int((px / map_width) * heatmap_w)
                     hy = int((py / map_height) * heatmap_h)
                     if 0 <= hx < heatmap_w and 0 <= hy < heatmap_h:
-                        heatmap_score = 1.0 - erangel_heatmap[hy, hx]
+                        heatmap_score = 1.0 - heatmap[hy, hx]
                         score_sum += heatmap_score
                         count += 1
     avg_score = score_sum / max(count, 1)
