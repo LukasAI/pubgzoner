@@ -32,6 +32,7 @@ maps_8x8 = ["Erangel", "Miramar", "Deston", "Taego", "Rondo"]
 maps_6x6 = ["Vikendi"]
 maps_4x4 = ["Sanhok"]
 
+# Radii per phase by map size (from official PUBG specs)
 radius_by_phase = {
     "8x8": [1997.05, 1198.25, 659.05, 362.45, 181.25, 90.6, 45.3, 22.65, 0],
     "6x6": [1502.3, 901.4, 495.75, 272.65, 136.35, 68.15, 34.1, 17.05, 0],
@@ -42,129 +43,116 @@ def get_radius(map_name, phase):
     key = "8x8" if map_name in maps_8x8 else "6x6" if map_name in maps_6x6 else "4x4"
     return radius_by_phase[key][min(phase - 1, 8)]
 
+# Load Erangel heatmap if available
+erangel_heatmap = None
+try:
+    if os.path.exists("erangel_heatmap.jpg"):
+        heatmap_img = Image.open("erangel_heatmap.jpg").convert("L")
+        erangel_heatmap = np.array(heatmap_img) / 255.0
+except:
+    pass
+
 # App state
 if 'zones' not in st.session_state:
     st.session_state.zones = []
 
-try:
-    st.write("App started ✔️")
+# Sidebar controls
+st.sidebar.title("PUBG Zone Predictor")
+map_name = st.sidebar.selectbox("Select Map", list(map_files.keys()))
+x = st.sidebar.slider("X Coordinate", 0, map_dimensions[map_name][0], 4000)
+y = st.sidebar.slider("Y Coordinate", 0, map_dimensions[map_name][1], 4000)
+phase = len(st.session_state.zones) + 1
+avoid_red_zones = st.sidebar.checkbox("Avoid red heatmap zones (Erangel only)", value=True)
 
-    # Load heatmap if Erangel
-    erangel_heatmap = None
-    if os.path.exists("erangel_heatmap.jpg"):
-        heatmap_img = Image.open("erangel_heatmap.jpg").convert("L")
-        erangel_heatmap = np.array(heatmap_img.resize((8160, 8160))) / 255.0
-        st.write("Heatmap loaded successfully:", erangel_heatmap.shape)
-    else:
-        st.warning("Heatmap file not found.")
+if st.sidebar.button("Set Zone"):
+    radius = get_radius(map_name, phase)
+    st.session_state.zones.append(((x, y), radius))
 
-    st.write("Rendering sidebar...")
+if st.sidebar.button("Reset Zones"):
+    st.session_state.zones = []
 
-    st.sidebar.title("PUBG Zone Predictor")
-    map_name = st.sidebar.selectbox("Select Map", list(map_files.keys()))
-    st.write(f"Map selected: {map_name}")
+def is_zone_on_land(center, radius, img_array):
+    cx, cy = int(center[0])
+    rr = int(radius)
+    count = 0
+    water_count = 0
+    for dx in range(-rr, rr + 1, 10):
+        for dy in range(-rr, rr + 1, 10):
+            if dx**2 + dy**2 <= rr**2:
+                px = cx + dx
+                py = cy + dy
+                if 0 <= px < img_array.shape[1] and 0 <= py < img_array.shape[0]:
+                    r, g, b = img_array[py, px, :3]
+                    count += 1
+                    if b > 130 and b > r + 20 and b > g + 20:
+                        water_count += 1
+    return water_count / max(count, 1) < 0.15
 
-    x = st.sidebar.slider("X Coordinate", 0, map_dimensions[map_name][0], 4000)
-    y = st.sidebar.slider("Y Coordinate", 0, map_dimensions[map_name][1], 4000)
-    phase = len(st.session_state.zones) + 1
-    avoid_red_zones = st.sidebar.checkbox("Avoid Zone 4 Red Zones (Heatmap)", value=True)
+def get_heatmap_score(x, y, map_width, map_height):
+    if erangel_heatmap is None or map_name != "Erangel":
+        return 1.0
+    heatmap_h, heatmap_w = erangel_heatmap.shape
+    scaled_x = int((x / map_width) * heatmap_w)
+    scaled_y = int((y / map_height) * heatmap_h)
+    if 0 <= scaled_x < heatmap_w and 0 <= scaled_y < heatmap_h:
+        return 1.0 - erangel_heatmap[scaled_y, scaled_x]  # flip because red = exclusion
+    return 0.5
 
-    if st.sidebar.button("Set Zone"):
-        radius = get_radius(map_name, phase)
-        st.session_state.zones.append(((x, y), radius))
-        st.write("Zone set manually.")
-
-    if st.sidebar.button("Reset Zones"):
-        st.session_state.zones = []
-        st.write("Zones reset.")
-
-    def is_zone_on_land(center, radius, img_array):
-        cx, cy = int(center[0]), int(center[1])
-        rr = int(radius)
-        h, w, _ = img_array.shape
-        count = 0
-        water_count = 0
-        for dx in range(-rr, rr + 1, 10):
-            for dy in range(-rr, rr + 1, 10):
-                if dx**2 + dy**2 <= rr**2:
-                    px = cx + dx
-                    py = cy + dy
-                    if 0 <= px < w and 0 <= py < h:
-                        pixel = img_array[py, px]
-                        r, g, b = pixel[:3]
-                        count += 1
-                        if b > 130 and b > r + 20 and b > g + 20:
-                            water_count += 1
-        return water_count / count < 0.15
-
-    if st.sidebar.button("Predict Next Zone"):
-        st.write("Starting prediction...")
-        if st.session_state.zones:
-            map_img = Image.open(map_files[map_name]).convert('RGB')
-            img_array = np.array(map_img)
-            width, height = map_dimensions[map_name]
-
-            last_center, last_radius = st.session_state.zones[-1]
-            current_phase = len(st.session_state.zones) + 1
-            new_radius = get_radius(map_name, current_phase)
-
-            for attempt in range(30):
-                center_bias_x = width / 2 - last_center[0]
-                center_bias_y = height / 2 - last_center[1]
-                bias_strength = 0.25 if current_phase <= 3 else 0.0
-                shift_bias = (random.uniform(-1, 1) + bias_strength * center_bias_x / width,
-                              random.uniform(-1, 1) + bias_strength * center_bias_y / height)
-                norm = math.hypot(*shift_bias)
-                shift_dir = (shift_bias[0] / norm, shift_bias[1] / norm)
-
-                max_shift = last_radius * (0.4 if current_phase <= 4 else 0.6)
-                shift_dist = random.uniform(0.3, 1.0) * max_shift
-
-                shift_x = shift_dist * shift_dir[0]
-                shift_y = shift_dist * shift_dir[1]
-
-                new_x = max(0, min(width, last_center[0] + shift_x))
-                new_y = max(0, min(height, last_center[1] + shift_y))
-                new_center = (new_x, new_y)
-
-                valid_land = is_zone_on_land(new_center, new_radius, img_array)
-                try:
-                    heatmap_score = 0 if erangel_heatmap is None or map_name != "Erangel" else 1 - erangel_heatmap[int(new_y), int(new_x)]
-                except Exception as e:
-                    st.error(f"Heatmap score error: {e}")
-                    heatmap_score = 0
-
-                if valid_land and (not avoid_red_zones or heatmap_score >= 0.3):
-                    st.session_state.zones.append((new_center, new_radius))
-                    st.write("Predicted zone accepted.")
-                    break
-
-    st.write("Rendering map...")
-    fig, ax = plt.subplots(figsize=(8, 8))
-    map_path = map_files[map_name]
-
-    if os.path.exists(map_path):
-        map_img = Image.open(map_path)
+if st.sidebar.button("Predict Next Zone"):
+    if st.session_state.zones:
+        map_img = Image.open(map_files[map_name]).convert('RGB')
+        img_array = np.array(map_img)
         width, height = map_dimensions[map_name]
-        ax.imshow(map_img, extent=[0, width, height, 0])
-        ax.set_xlim(0, width)
-        ax.set_ylim(height, 0)
 
-        if erangel_heatmap is not None and map_name == "Erangel" and avoid_red_zones:
-            ax.imshow(erangel_heatmap, extent=[0, width, height, 0], cmap='jet', alpha=0.3)
+        last_center, last_radius = st.session_state.zones[-1]
+        current_phase = len(st.session_state.zones) + 1
+        new_radius = get_radius(map_name, current_phase)
 
-        colors = ['blue', 'green', 'orange', 'red', 'purple', 'black', 'cyan', 'magenta']
-        for i, (center, radius) in enumerate(st.session_state.zones):
-            circle = patches.Circle(center, radius, fill=False, linewidth=2, edgecolor=colors[i % len(colors)])
-            ax.add_patch(circle)
-            ax.text(center[0], center[1], f'Z{i+1}', color=colors[i % len(colors)],
-                    fontsize=10, ha='center', va='center', weight='bold')
+        for attempt in range(30):
+            center_bias_x = width / 2 - last_center[0]
+            center_bias_y = height / 2 - last_center[1]
+            bias_strength = 0.25 if current_phase <= 3 else 0.0
+            shift_bias = (random.uniform(-1, 1) + bias_strength * center_bias_x / width,
+                          random.uniform(-1, 1) + bias_strength * center_bias_y / height)
+            norm = math.hypot(*shift_bias)
+            shift_dir = (shift_bias[0] / norm, shift_bias[1] / norm)
 
-        ax.set_title(f"{map_name} - Zones")
-        st.pyplot(fig)
-        st.write("Map rendered.")
-    else:
-        st.error(f"Map image not found: {map_path}")
+            max_shift = last_radius * (0.4 if current_phase <= 4 else 0.6)
+            shift_dist = random.uniform(0.3, 1.0) * max_shift
 
-except Exception as fatal_error:
-    st.error(f"💥 Fatal app error: {fatal_error}")
+            shift_x = shift_dist * shift_dir[0]
+            shift_y = shift_dist * shift_dir[1]
+
+            new_x = max(0, min(width, last_center[0] + shift_x))
+            new_y = max(0, min(height, last_center[1] + shift_y))
+            new_center = (new_x, new_y)
+
+            land_ok = is_zone_on_land(new_center, new_radius, img_array)
+            heatmap_score = get_heatmap_score(new_x, new_y, width, height)
+
+            if land_ok and (not avoid_red_zones or heatmap_score > 0.3):
+                st.session_state.zones.append((new_center, new_radius))
+                break
+
+# Display Map and Circles
+fig, ax = plt.subplots(figsize=(8, 8))
+map_path = map_files[map_name]
+
+if os.path.exists(map_path):
+    map_img = Image.open(map_path)
+    width, height = map_dimensions[map_name]
+    ax.imshow(map_img, extent=[0, width, height, 0])
+    ax.set_xlim(0, width)
+    ax.set_ylim(height, 0)
+
+    colors = ['blue', 'green', 'orange', 'red', 'purple', 'black', 'cyan', 'magenta']
+    for i, (center, radius) in enumerate(st.session_state.zones):
+        circle = patches.Circle(center, radius, fill=False, linewidth=2, edgecolor=colors[i % len(colors)])
+        ax.add_patch(circle)
+        ax.text(center[0], center[1], f'Z{i+1}', color=colors[i % len(colors)],
+                fontsize=10, ha='center', va='center', weight='bold')
+
+    ax.set_title(f"{map_name} - Zones")
+    st.pyplot(fig)
+else:
+    st.error(f"Map image not found: {map_path}")
