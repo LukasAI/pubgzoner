@@ -112,7 +112,7 @@ def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
     """
     This function analyzes the candidate zone using a finer sampling resolution.
     A pixel is considered unsafe if its heatmap value exceeds 0.8.
-    The candidate zone is acceptable only if less than 5% of its sampled area is unsafe.
+    The candidate zone is acceptable only if less than 10% of its sampled area is unsafe.
     
     The conversion from map pixel coordinates to heatmap pixel coordinates is done
     using a fixed ratio. Since the regular map is 3072×3072 and the heatmap is 1080×1080,
@@ -147,7 +147,6 @@ def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
                 px = cx + dx
                 py = cy + dy
                 if 0 <= px < map_width and 0 <= py < map_height:
-                    # Convert using the fixed ratio based on regular map size (3072)
                     hx = int(px * heatmap_ratio)
                     hy = int(py * heatmap_ratio)
                     if 0 <= hx < hm_width and 0 <= hy < hm_height:
@@ -155,7 +154,7 @@ def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
                         if heatmap[hy, hx] > unsafe_pixel_threshold:
                             unsafe_count += 1
     unsafe_ratio = unsafe_count / total_count if total_count > 0 else 0
-    return unsafe_ratio < 0.05
+    return unsafe_ratio < 0.10  # Relaxed threshold to 10%
 
 # Initialize session state for zones if not already set
 if 'zones' not in st.session_state:
