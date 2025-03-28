@@ -182,8 +182,7 @@ with st.sidebar:
             new_radius = get_scaled_radius(map_name, current_phase)
 
             best_candidate = None
-
-            # For phases before 4 (Z1→Z2 or Z2→Z3), simply take the first candidate that passes.
+            # For phases before Z4, accept the first candidate that passes.
             if current_phase < 4:
                 for attempt in range(30):
                     center_bias_x = width / 2 - last_center[0]
@@ -208,13 +207,12 @@ with st.sidebar:
                     if not is_zone_on_land(new_center, new_radius, img_array):
                         continue
 
-                    # For phases before Z4, accept the first candidate that passes.
                     best_candidate = (new_center, new_radius)
                     break
             else:
-                # For Z4 and later, evaluate 30 candidates and choose the one with the lowest red ratio.
+                # For Z4 and later, sample more candidates (100 attempts) and choose the one with the lowest unsafe ratio.
                 best_ratio = float('inf')
-                for attempt in range(30):
+                for attempt in range(100):
                     center_bias_x = width / 2 - last_center[0]
                     center_bias_y = height / 2 - last_center[1]
                     bias_strength = 0.25 if current_phase <= 3 else 0.0
