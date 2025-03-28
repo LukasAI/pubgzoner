@@ -41,6 +41,7 @@ radius_by_phase = {
 }
 
 def get_map_meter_size(map_name):
+    # Returns in‑game map size in meters.
     return 8000 if map_name in maps_8x8 else 6000 if map_name in maps_6x6 else 4000
 
 def get_radius(map_name, phase):
@@ -48,6 +49,7 @@ def get_radius(map_name, phase):
     return radius_by_phase[key][min(phase - 1, 8)]
 
 def get_scaled_radius(map_name, phase):
+    # Converts in‑game radius (meters) to image pixels.
     base_radius = get_radius(map_name, phase)
     map_meter_size = get_map_meter_size(map_name)
     pixel_width = map_dimensions[map_name][0]
@@ -55,16 +57,18 @@ def get_scaled_radius(map_name, phase):
     return base_radius * scale_factor
 
 def world_to_image(x, map_name):
+    # Convert in‑game meters to image pixels.
     map_meter_size = get_map_meter_size(map_name)
     pixel_width = map_dimensions[map_name][0]
     return x * (pixel_width / map_meter_size)
 
 def image_to_world(x, map_name):
+    # Convert image pixels back to in‑game meters.
     map_meter_size = get_map_meter_size(map_name)
     pixel_width = map_dimensions[map_name][0]
     return x * (map_meter_size / pixel_width)
 
-# Load heatmaps if available (expected to be 1080x1080)
+# Load heatmaps (now these are 3072x3072 and perfectly aligned with the regular maps)
 erangel_heatmap = None
 miramar_heatmap = None
 vikendi_heatmap = None
@@ -105,8 +109,9 @@ def is_zone_on_land(center, radius, img_array):
 def compute_unsafe_ratio(center, radius, map_name, map_width, map_height):
     """
     Samples the candidate zone at a 5-pixel resolution and returns the ratio of unsafe pixels.
-    A pixel is unsafe if its heatmap value exceeds 0.8.
-    The conversion uses a fixed ratio between the regular map (3072x3072) and the heatmap (1080x1080).
+    A pixel is considered unsafe if its heatmap value exceeds 0.8.
+    Since the regular map and the heatmap are now both 3072x3072,
+    the conversion ratio is 1.
     """
     if map_name == "Erangel":
         heatmap = erangel_heatmap
@@ -123,9 +128,8 @@ def compute_unsafe_ratio(center, radius, map_name, map_width, map_height):
         return 0.0
 
     hm_height, hm_width = heatmap.shape
-    # Conversion ratio from regular map (3072) to heatmap (1080)
-    heatmap_ratio = hm_width / map_width
-
+    # Both the map and the heatmap have the same resolution; ratio = 1.
+    heatmap_ratio = hm_width / map_width  # Should be 1.0
     cx, cy = int(center[0]), int(center[1])
     rr = int(radius)
     total_count = 0
@@ -182,8 +186,8 @@ with st.sidebar:
             new_radius = get_scaled_radius(map_name, current_phase)
 
             best_candidate = None
-            # For phases before Z4, accept the first candidate that passes.
             if current_phase < 4:
+                # For phases before Z4, take the first candidate that passes the land test.
                 for attempt in range(30):
                     center_bias_x = width / 2 - last_center[0]
                     center_bias_y = height / 2 - last_center[1]
@@ -210,7 +214,7 @@ with st.sidebar:
                     best_candidate = (new_center, new_radius)
                     break
             else:
-                # For Z4 and later, sample more candidates (100 attempts) and choose the one with the lowest unsafe ratio.
+                # For Z4 and later, sample 100 candidates and choose the one with the lowest unsafe (red) ratio.
                 best_ratio = float('inf')
                 for attempt in range(100):
                     center_bias_x = width / 2 - last_center[0]
@@ -252,6 +256,7 @@ map_meter_size = get_map_meter_size(map_name)
 
 if os.path.exists(map_path):
     map_img = Image.open(map_path)
+    # Display the map with axes in in‑game meters.
     ax.imshow(map_img, extent=[0, map_meter_size, map_meter_size, 0])
     ax.set_xlim(0, map_meter_size)
     ax.set_ylim(map_meter_size, 0)
