@@ -145,4 +145,10 @@ if os.path.exists(map_path):
         radius_m = image_to_world(radius_px, map_name)
         circle = patches.Circle((cx, cy), radius_m, fill=False, linewidth=2, edgecolor=colors[i % len(colors)])
         ax.add_patch(circle)
-        ax.text(cx, cy, f'Z{i+1}', color=
+        ax.text(cx, cy, f'Z{i+1}', color=colors[i % len(colors)],
+                fontsize=10, ha='center', va='center', weight='bold')
+
+    ax.set_title(f"{map_name} - Zones")
+    st.pyplot(fig)
+else:
+    st.error(f"Map image not found: {map_path}")
