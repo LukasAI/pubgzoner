@@ -18,7 +18,7 @@ map_files = {
     "Rondo": "Rondo_Main_High_Res.png"
 }
 
-# Image pixel dimensions for each map (regular maps)
+# Regular map image pixel dimensions (all maps are 3072x3072)
 map_dimensions = {
     "Erangel": (3072, 3072),
     "Miramar": (3072, 3072),
@@ -41,7 +41,6 @@ radius_by_phase = {
 }
 
 def get_map_meter_size(map_name):
-    # Return the in‑game map size in meters
     return 8000 if map_name in maps_8x8 else 6000 if map_name in maps_6x6 else 4000
 
 def get_radius(map_name, phase):
@@ -49,7 +48,7 @@ def get_radius(map_name, phase):
     return radius_by_phase[key][min(phase - 1, 8)]
 
 def get_scaled_radius(map_name, phase):
-    # Convert in‑game radius (meters) to image pixels
+    # Converts in‑game radius (meters) to image pixels.
     base_radius = get_radius(map_name, phase)
     map_meter_size = get_map_meter_size(map_name)
     pixel_width = map_dimensions[map_name][0]
@@ -57,18 +56,16 @@ def get_scaled_radius(map_name, phase):
     return base_radius * scale_factor
 
 def world_to_image(x, map_name):
-    # Convert in‑game meters to image pixels
+    # Convert in‑game meters to image pixels.
     map_meter_size = get_map_meter_size(map_name)
     pixel_width = map_dimensions[map_name][0]
-    scale = pixel_width / map_meter_size
-    return x * scale
+    return x * (pixel_width / map_meter_size)
 
 def image_to_world(x, map_name):
-    # Convert image pixels back to in‑game meters
+    # Convert image pixels back to in‑game meters.
     map_meter_size = get_map_meter_size(map_name)
     pixel_width = map_dimensions[map_name][0]
-    scale = map_meter_size / pixel_width
-    return x * scale
+    return x * (map_meter_size / pixel_width)
 
 # Load heatmaps if available (expected to be 1080x1080)
 erangel_heatmap = None
@@ -108,15 +105,11 @@ def is_zone_on_land(center, radius, img_array):
                         water_count += 1
     return water_count / max(count, 1) < 0.15
 
-def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
+def compute_unsafe_ratio(center, radius, map_name, map_width, map_height):
     """
-    This function analyzes the candidate zone using a finer sampling resolution.
-    A pixel is considered unsafe if its heatmap value exceeds 0.8.
-    The candidate zone is acceptable only if less than 10% of its sampled area is unsafe.
-    
-    The conversion from map pixel coordinates to heatmap pixel coordinates is done
-    using a fixed ratio. Since the regular map is 3072×3072 and the heatmap is 1080×1080,
-    we use heatmap_ratio = 1080 / 3072.
+    Samples the candidate zone at a 5-pixel resolution and returns the ratio of unsafe pixels.
+    A pixel is unsafe if its heatmap value exceeds 0.8.
+    The conversion uses a fixed ratio between the regular map (3072x3072) and the heatmap (1080x1080).
     """
     if map_name == "Erangel":
         heatmap = erangel_heatmap
@@ -127,20 +120,20 @@ def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
     elif map_name == "Vikendi":
         heatmap = vikendi_heatmap
     else:
-        return True
+        return 0.0
 
     if heatmap is None:
-        return True
+        return 0.0
 
-    # For alignment, we assume the regular map covers 3072x3072 pixels.
     hm_height, hm_width = heatmap.shape
-    heatmap_ratio = hm_width / map_width  # For 3072->1080, ratio is ~0.3516
+    # Regular map is 3072x3072; compute conversion ratio.
+    heatmap_ratio = hm_width / map_width  # Expected ~0.3516 for 1080/3072
 
     cx, cy = int(center[0]), int(center[1])
     rr = int(radius)
     total_count = 0
     unsafe_count = 0
-    unsafe_pixel_threshold = 0.8  # Pixel is unsafe if heatmap value > 0.8
+    unsafe_pixel_threshold = 0.8  # A pixel is unsafe if its value > 0.8
     for dx in range(-rr, rr + 1, 5):
         for dy in range(-rr, rr + 1, 5):
             if dx**2 + dy**2 <= rr**2:
@@ -153,8 +146,11 @@ def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
                         total_count += 1
                         if heatmap[hy, hx] > unsafe_pixel_threshold:
                             unsafe_count += 1
-    unsafe_ratio = unsafe_count / total_count if total_count > 0 else 0
-    return unsafe_ratio < 0.10  # Relaxed threshold to 10%
+    return unsafe_count / total_count if total_count > 0 else 0
+
+def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
+    # Accept candidate if less than 20% of sampled pixels are unsafe.
+    return compute_unsafe_ratio(center, radius, map_name, map_width, map_height) < 0.20
 
 # Initialize session state for zones if not already set
 if 'zones' not in st.session_state:
@@ -171,7 +167,7 @@ with st.sidebar:
     avoid_red_zones = st.checkbox("Avoid red heatmap zones (All maps supported)", value=True)
 
     if st.button("Set Zone"):
-        # Convert in‑game meters to image pixel coordinates before storing
+        # Convert in‑game meters to image pixels before storing.
         radius = get_scaled_radius(map_name, selected_phase)
         img_x = world_to_image(x, map_name)
         img_y = world_to_image(y, map_name)
@@ -184,16 +180,19 @@ with st.sidebar:
 
     if st.button("Predict Next Zone"):
         if any(st.session_state.zones):
-            # Open the map image in RGB mode for pixel analysis
             map_img = Image.open(map_files[map_name]).convert('RGB')
             img_array = np.array(map_img)
-            width, height = map_dimensions[map_name]  # Regular map pixel dimensions
+            width, height = map_dimensions[map_name]  # Regular map dimensions (3072x3072)
 
-            # Find the last zone that was set (in pixel coordinates)
+            # Find the last zone set (in pixel coordinates)
             last_idx = max(i for i, z in enumerate(st.session_state.zones) if z is not None)
             last_center, last_radius = st.session_state.zones[last_idx]
-            current_phase = last_idx + 2  # next phase number
+            current_phase = last_idx + 2  # Next phase number
             new_radius = get_scaled_radius(map_name, current_phase)
+
+            candidate_found = False
+            best_candidate = None
+            best_ratio = 1.0
 
             for attempt in range(30):
                 center_bias_x = width / 2 - last_center[0]
@@ -215,15 +214,24 @@ with st.sidebar:
                 new_center = (new_x, new_y)
 
                 land_ok = is_zone_on_land(new_center, new_radius, img_array)
-                heatmap_ok = True
+                # Only check heatmap if applicable.
                 if map_name in ["Erangel", "Miramar", "Taego", "Vikendi"] and avoid_red_zones and current_phase >= 4:
-                    heatmap_ok = is_zone_heatmap_acceptable(new_center, new_radius, map_name, width, height)
+                    unsafe_ratio = compute_unsafe_ratio(new_center, new_radius, map_name, width, height)
+                    if unsafe_ratio < best_ratio:
+                        best_ratio = unsafe_ratio
+                        best_candidate = (new_center, new_radius)
+                    if unsafe_ratio < 0.20 and land_ok:
+                        st.session_state.zones[current_phase - 1] = (new_center, new_radius)
+                        candidate_found = True
+                        break
+                else:
+                    if land_ok:
+                        st.session_state.zones[current_phase - 1] = (new_center, new_radius)
+                        candidate_found = True
+                        break
 
-                if land_ok and heatmap_ok:
-                    while len(st.session_state.zones) < current_phase:
-                        st.session_state.zones.append(None)
-                    st.session_state.zones[current_phase - 1] = (new_center, new_radius)
-                    break
+            if not candidate_found and best_candidate is not None:
+                st.session_state.zones[current_phase - 1] = best_candidate
 
 # Display Map and Circles
 fig, ax = plt.subplots(figsize=(8, 8))
@@ -232,7 +240,7 @@ map_meter_size = get_map_meter_size(map_name)
 
 if os.path.exists(map_path):
     map_img = Image.open(map_path)
-    # Display the image using in‑game meter coordinates for the axes
+    # Display the map using in‑game meter coordinates on the axes.
     ax.imshow(map_img, extent=[0, map_meter_size, map_meter_size, 0])
     ax.set_xlim(0, map_meter_size)
     ax.set_ylim(map_meter_size, 0)
@@ -242,7 +250,6 @@ if os.path.exists(map_path):
         if zone is None:
             continue
         center_px, radius_px = zone
-        # Convert stored pixel coordinates back to in‑game meters for display
         cx = image_to_world(center_px[0], map_name)
         cy = image_to_world(center_px[1], map_name)
         radius_m = image_to_world(radius_px, map_name)
