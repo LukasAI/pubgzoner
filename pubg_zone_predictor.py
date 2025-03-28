@@ -83,30 +83,19 @@ except:
 if 'zones' not in st.session_state:
     st.session_state.zones = []
 
-st.sidebar.title("PUBG Zone Predictor")
+with st.sidebar:
+    st.title("PUBG Zone Predictor")
+    map_name = st.selectbox("Select Map", list(map_files.keys()))
 
-
-# Cool status indicator for heatmap readiness
-heatmap_ready = (
-    (map_name == "Erangel" and erangel_heatmap is not None) or
-    (map_name == "Miramar" and miramar_heatmap is not None) or
-    (map_name == "Vikendi" and vikendi_heatmap is not None) or
-    (map_name == "Taego" and taego_heatmap is not None)
-)
-ml_color = "green" if heatmap_ready else "red"
-ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
-st.sidebar.markdown(ml_status, unsafe_allow_html=True)
-
-# Cool status indicator for heatmap readiness
-heatmap_ready = (
-    (map_name == "Erangel" and erangel_heatmap is not None) or
-    (map_name == "Miramar" and miramar_heatmap is not None) or
-    (map_name == "Vikendi" and vikendi_heatmap is not None) or
-    (map_name == "Taego" and taego_heatmap is not None)
-)
-ml_color = "green" if heatmap_ready else "red"
-ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
-st.sidebar.markdown(ml_status, unsafe_allow_html=True)
+    heatmap_ready = (
+        (map_name == "Erangel" and erangel_heatmap is not None) or
+        (map_name == "Miramar" and miramar_heatmap is not None) or
+        (map_name == "Vikendi" and vikendi_heatmap is not None) or
+        (map_name == "Taego" and taego_heatmap is not None)
+    )
+    ml_color = "green" if heatmap_ready else "red"
+    ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
+    st.markdown(ml_status, unsafe_allow_html=True)
 
 # Cool status indicator for heatmap readiness
 heatmap_ready = (
@@ -129,7 +118,17 @@ heatmap_ready = (
 ml_color = "green" if heatmap_ready else "red"
 ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
 st.sidebar.markdown(ml_status, unsafe_allow_html=True)
-map_name = st.sidebar.selectbox("Select Map", list(map_files.keys()))
+
+# Cool status indicator for heatmap readiness
+heatmap_ready = (
+    (map_name == "Erangel" and erangel_heatmap is not None) or
+    (map_name == "Miramar" and miramar_heatmap is not None) or
+    (map_name == "Vikendi" and vikendi_heatmap is not None) or
+    (map_name == "Taego" and taego_heatmap is not None)
+)
+ml_color = "green" if heatmap_ready else "red"
+ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
+st.sidebar.markdown(ml_status, unsafe_allow_html=True)
 map_meter_size = 8000 if map_name in maps_8x8 else 6000 if map_name in maps_6x6 else 4000
 x = st.sidebar.slider("X Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
 y = st.sidebar.slider("Y Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
