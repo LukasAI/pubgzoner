@@ -95,7 +95,9 @@ with st.sidebar:
     )
     ml_color = "green" if heatmap_ready else "red"
     ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
-    st.markdown(ml_status, unsafe_allow_html=True)
+    if 'ml_status_rendered' not in st.session_state:
+        st.session_state.ml_status_rendered = True
+        st.markdown(ml_status, unsafe_allow_html=True)
 
 # Cool status indicator for heatmap readiness
 heatmap_ready = (
