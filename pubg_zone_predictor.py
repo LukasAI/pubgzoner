@@ -18,7 +18,7 @@ map_files = {
     "Rondo": "Rondo_Main_High_Res.png"
 }
 
-# Image pixel dimensions for each map
+# Image pixel dimensions for each map (regular maps)
 map_dimensions = {
     "Erangel": (3072, 3072),
     "Miramar": (3072, 3072),
@@ -70,7 +70,7 @@ def image_to_world(x, map_name):
     scale = map_meter_size / pixel_width
     return x * scale
 
-# Load heatmaps if available
+# Load heatmaps if available (expected to be 1080x1080)
 erangel_heatmap = None
 miramar_heatmap = None
 vikendi_heatmap = None
@@ -110,10 +110,13 @@ def is_zone_on_land(center, radius, img_array):
 
 def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
     """
-    This function analyzes the entire zone area at a finer sampling resolution.
-    A pixel is considered "unsafe" (red) if its heatmap value exceeds 0.8.
-    The candidate zone is acceptable only if less than 5% of the sampled pixels
-    are unsafe – effectively ensuring that almost 100% of the zone is not red.
+    This function analyzes the candidate zone using a finer sampling resolution.
+    A pixel is considered unsafe if its heatmap value exceeds 0.8.
+    The candidate zone is acceptable only if less than 5% of its sampled area is unsafe.
+    
+    The conversion from map pixel coordinates to heatmap pixel coordinates is done
+    using a fixed ratio. Since the regular map is 3072×3072 and the heatmap is 1080×1080,
+    we use heatmap_ratio = 1080 / 3072.
     """
     if map_name == "Erangel":
         heatmap = erangel_heatmap
@@ -129,27 +132,30 @@ def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
     if heatmap is None:
         return True
 
+    # For alignment, we assume the regular map covers 3072x3072 pixels.
+    hm_height, hm_width = heatmap.shape
+    heatmap_ratio = hm_width / map_width  # For 3072->1080, ratio is ~0.3516
+
     cx, cy = int(center[0]), int(center[1])
     rr = int(radius)
-    heatmap_h, heatmap_w = heatmap.shape
     total_count = 0
     unsafe_count = 0
-    unsafe_pixel_threshold = 0.8  # Consider a pixel unsafe if its heatmap value is above 0.8
-    # Use a finer step (5 pixels) to sample the candidate circle area
+    unsafe_pixel_threshold = 0.8  # Pixel is unsafe if heatmap value > 0.8
     for dx in range(-rr, rr + 1, 5):
         for dy in range(-rr, rr + 1, 5):
             if dx**2 + dy**2 <= rr**2:
                 px = cx + dx
                 py = cy + dy
                 if 0 <= px < map_width and 0 <= py < map_height:
-                    hx = int((px / map_width) * heatmap_w)
-                    hy = int((py / map_height) * heatmap_h)
-                    if 0 <= hx < heatmap_w and 0 <= hy < heatmap_h:
+                    # Convert using the fixed ratio based on regular map size (3072)
+                    hx = int(px * heatmap_ratio)
+                    hy = int(py * heatmap_ratio)
+                    if 0 <= hx < hm_width and 0 <= hy < hm_height:
                         total_count += 1
                         if heatmap[hy, hx] > unsafe_pixel_threshold:
                             unsafe_count += 1
     unsafe_ratio = unsafe_count / total_count if total_count > 0 else 0
-    return unsafe_ratio < 0.05  # Accept only if less than 5% of the zone is unsafe
+    return unsafe_ratio < 0.05
 
 # Initialize session state for zones if not already set
 if 'zones' not in st.session_state:
@@ -182,7 +188,7 @@ with st.sidebar:
             # Open the map image in RGB mode for pixel analysis
             map_img = Image.open(map_files[map_name]).convert('RGB')
             img_array = np.array(map_img)
-            width, height = map_dimensions[map_name]  # image pixel dimensions
+            width, height = map_dimensions[map_name]  # Regular map pixel dimensions
 
             # Find the last zone that was set (in pixel coordinates)
             last_idx = max(i for i, z in enumerate(st.session_state.zones) if z is not None)
