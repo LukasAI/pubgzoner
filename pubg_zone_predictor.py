@@ -18,7 +18,7 @@ map_files = {
     "Rondo": "Rondo_Main_High_Res.png"
 }
 
-# These are the image pixel dimensions
+# Image pixel dimensions for each map
 map_dimensions = {
     "Erangel": (3072, 3072),
     "Miramar": (3072, 3072),
@@ -41,7 +41,7 @@ radius_by_phase = {
 }
 
 def get_map_meter_size(map_name):
-    # In-game map sizes in meters
+    # Return the in-game map size in meters
     return 8000 if map_name in maps_8x8 else 6000 if map_name in maps_6x6 else 4000
 
 def get_radius(map_name, phase):
@@ -49,7 +49,7 @@ def get_radius(map_name, phase):
     return radius_by_phase[key][min(phase - 1, 8)]
 
 def get_scaled_radius(map_name, phase):
-    # Converts in-game radius (meters) to image pixels
+    # Convert in-game radius (meters) to image pixels
     base_radius = get_radius(map_name, phase)
     map_meter_size = get_map_meter_size(map_name)
     pixel_width = map_dimensions[map_name][0]
@@ -88,10 +88,9 @@ try:
     if os.path.exists("taego_heatmap.jpg"):
         heatmap_img = Image.open("taego_heatmap.jpg").convert("L")
         taego_heatmap = np.array(heatmap_img) / 255.0
-except:
+except Exception as e:
     pass
 
-# Functions to validate if a zone is on land / acceptable via heatmap
 def is_zone_on_land(center, radius, img_array):
     cx, cy = int(center[0]), int(center[1])
     rr = int(radius)
@@ -110,10 +109,15 @@ def is_zone_on_land(center, radius, img_array):
     return water_count / max(count, 1) < 0.15
 
 def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
+    # Select the appropriate heatmap for the map
     if map_name == "Erangel":
         heatmap = erangel_heatmap
     elif map_name == "Miramar":
         heatmap = miramar_heatmap
+    elif map_name == "Taego":
+        heatmap = taego_heatmap
+    elif map_name == "Vikendi":
+        heatmap = vikendi_heatmap
     else:
         return True
 
@@ -176,7 +180,7 @@ with st.sidebar:
             # Find the last zone that was set (in pixel coordinates)
             last_idx = max(i for i, z in enumerate(st.session_state.zones) if z is not None)
             last_center, last_radius = st.session_state.zones[last_idx]
-            current_phase = last_idx + 2  # next phase
+            current_phase = last_idx + 2  # next phase number
             new_radius = get_scaled_radius(map_name, current_phase)
 
             for attempt in range(30):
@@ -200,7 +204,7 @@ with st.sidebar:
 
                 land_ok = is_zone_on_land(new_center, new_radius, img_array)
                 heatmap_ok = True
-                if map_name in ["Erangel", "Miramar"] and avoid_red_zones and current_phase >= 4:
+                if map_name in ["Erangel", "Miramar", "Taego", "Vikendi"] and avoid_red_zones and current_phase >= 4:
                     heatmap_ok = is_zone_heatmap_acceptable(new_center, new_radius, map_name, width, height)
 
                 if land_ok and heatmap_ok:
@@ -226,7 +230,7 @@ if os.path.exists(map_path):
         if zone is None:
             continue
         center_px, radius_px = zone
-        # Convert the stored pixel coordinates back to in-game meters for display
+        # Convert stored pixel coordinates back to in-game meters for display
         cx = image_to_world(center_px[0], map_name)
         cy = image_to_world(center_px[1], map_name)
         radius_m = image_to_world(radius_px, map_name)
