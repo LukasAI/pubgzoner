@@ -62,6 +62,8 @@ def image_to_world(x, map_name):
 # Load heatmaps if available
 erangel_heatmap = None
 miramar_heatmap = None
+vikendi_heatmap = None
+taego_heatmap = None
 try:
     if os.path.exists("erangel_heatmap.jpg"):
         heatmap_img = Image.open("erangel_heatmap.jpg").convert("L")
@@ -69,6 +71,12 @@ try:
     if os.path.exists("miramar_heatmap.jpg"):
         heatmap_img = Image.open("miramar_heatmap.jpg").convert("L")
         miramar_heatmap = np.array(heatmap_img) / 255.0
+    if os.path.exists("vikendi_heatmap.jpg"):
+        heatmap_img = Image.open("vikendi_heatmap.jpg").convert("L")
+        vikendi_heatmap = np.array(heatmap_img) / 255.0
+    if os.path.exists("taego_heatmap.jpg"):
+        heatmap_img = Image.open("taego_heatmap.jpg").convert("L")
+        taego_heatmap = np.array(heatmap_img) / 255.0
 except:
     pass
 
@@ -80,7 +88,7 @@ map_name = st.sidebar.selectbox("Select Map", list(map_files.keys()))
 x = st.sidebar.slider("X Coordinate (meters)", 0, WORLD_SIZE, 4000)
 y = st.sidebar.slider("Y Coordinate (meters)", 0, WORLD_SIZE, 4000)
 selected_phase = st.sidebar.selectbox("Which phase are you placing?", list(range(1, 10)))
-avoid_red_zones = st.sidebar.checkbox("Avoid red heatmap zones (Erangel/Miramar)", value=True)
+avoid_red_zones = st.sidebar.checkbox("Avoid red heatmap zones (All maps supported)", value=True)
 
 if st.sidebar.button("Set Zone"):
     radius = get_scaled_radius(map_name, selected_phase)
@@ -92,6 +100,41 @@ if st.sidebar.button("Set Zone"):
 
 if st.sidebar.button("Reset Zones"):
     st.session_state.zones = []
+
+def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
+    if map_name == "Erangel":
+        heatmap = erangel_heatmap
+    elif map_name == "Miramar":
+        heatmap = miramar_heatmap
+    elif map_name == "Vikendi":
+        heatmap = vikendi_heatmap
+    elif map_name == "Taego":
+        heatmap = taego_heatmap
+    else:
+        return True
+
+    if heatmap is None:
+        return True
+
+    cx, cy = int(center[0]), int(center[1])
+    rr = int(radius)
+    heatmap_h, heatmap_w = heatmap.shape
+    score_sum = 0
+    count = 0
+    for dx in range(-rr, rr + 1, 10):
+        for dy in range(-rr, rr + 1, 10):
+            if dx**2 + dy**2 <= rr**2:
+                px = cx + dx
+                py = cy + dy
+                if 0 <= px < map_width and 0 <= py < map_height:
+                    hx = int((px / map_width) * heatmap_w)
+                    hy = int((py / map_height) * heatmap_h)
+                    if 0 <= hx < heatmap_w and 0 <= hy < heatmap_h:
+                        heatmap_score = 1.0 - heatmap[hy, hx]
+                        score_sum += heatmap_score
+                        count += 1
+    avg_score = score_sum / max(count, 1)
+    return avg_score > 0.3
 
 # Display Map and Circles
 fig, ax = plt.subplots(figsize=(8, 8))
