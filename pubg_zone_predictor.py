@@ -85,6 +85,18 @@ if 'zones' not in st.session_state:
 
 st.sidebar.title("PUBG Zone Predictor")
 
+
+# Cool status indicator for heatmap readiness
+heatmap_ready = (
+    (map_name == "Erangel" and erangel_heatmap is not None) or
+    (map_name == "Miramar" and miramar_heatmap is not None) or
+    (map_name == "Vikendi" and vikendi_heatmap is not None) or
+    (map_name == "Taego" and taego_heatmap is not None)
+)
+ml_color = "green" if heatmap_ready else "red"
+ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
+st.sidebar.markdown(ml_status, unsafe_allow_html=True)
+
 # Cool status indicator for heatmap readiness
 heatmap_ready = (
     (map_name == "Erangel" and erangel_heatmap is not None) or
