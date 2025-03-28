@@ -86,8 +86,10 @@ if 'zones' not in st.session_state:
 with st.sidebar:
     st.title("PUBG Zone Predictor")
     map_name = st.selectbox("Select Map", list(map_files.keys()))
-    x = st.slider("X Coordinate (meters)", 0, 8000, 4000)
-    y = st.slider("Y Coordinate (meters)", 0, 8000, 4000)
+
+    map_meter_size = 8000 if map_name in maps_8x8 else 6000 if map_name in maps_6x6 else 4000
+    x = st.slider("X Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
+    y = st.slider("Y Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
     selected_phase = st.selectbox("Which phase are you placing?", list(range(1, 10)))
     avoid_red_zones = st.checkbox("Avoid red heatmap zones (All maps supported)", value=True)
 
