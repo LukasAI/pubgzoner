@@ -103,11 +103,6 @@ with st.sidebar:
     ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
     st.markdown(ml_status, unsafe_allow_html=True)
 
-    map_meter_size = 8000 if map_name in maps_8x8 else 6000 if map_name in maps_6x6 else 4000
-    x = st.slider("X Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
-    y = st.slider("Y Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
-    selected_phase = st.selectbox("Which phase are you placing?", list(range(1, 10)))
-
     if st.button("Set Zone"):
         radius = get_scaled_radius(map_name, selected_phase)
         img_x = world_to_image(x, map_name)
