@@ -84,9 +84,21 @@ if 'zones' not in st.session_state:
     st.session_state.zones = []
 
 st.sidebar.title("PUBG Zone Predictor")
+
+# Cool status indicator for heatmap readiness
+heatmap_ready = (
+    (map_name == "Erangel" and erangel_heatmap is not None) or
+    (map_name == "Miramar" and miramar_heatmap is not None) or
+    (map_name == "Vikendi" and vikendi_heatmap is not None) or
+    (map_name == "Taego" and taego_heatmap is not None)
+)
+ml_color = "green" if heatmap_ready else "red"
+ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
+st.sidebar.markdown(ml_status, unsafe_allow_html=True)
 map_name = st.sidebar.selectbox("Select Map", list(map_files.keys()))
-x = st.sidebar.slider("X Coordinate (meters)", 0, WORLD_SIZE, 4000)
-y = st.sidebar.slider("Y Coordinate (meters)", 0, WORLD_SIZE, 4000)
+map_meter_size = 8000 if map_name in maps_8x8 else 6000 if map_name in maps_6x6 else 4000
+x = st.sidebar.slider("X Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
+y = st.sidebar.slider("Y Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
 selected_phase = st.sidebar.selectbox("Which phase are you placing?", list(range(1, 10)))
 avoid_red_zones = st.sidebar.checkbox("Avoid red heatmap zones (All maps supported)", value=True)
 
@@ -143,9 +155,9 @@ map_path = map_files[map_name]
 if os.path.exists(map_path):
     map_img = Image.open(map_path)
     width, height = map_dimensions[map_name]
-    ax.imshow(map_img, extent=[0, width, height, 0])
-    ax.set_xlim(0, width)
-    ax.set_ylim(height, 0)
+    ax.imshow(map_img, extent=[0, WORLD_SIZE, WORLD_SIZE, 0])
+    ax.set_xlim(0, WORLD_SIZE)
+    ax.set_ylim(WORLD_SIZE, 0)
 
     colors = ['blue', 'green', 'orange', 'red', 'purple', 'black', 'cyan', 'magenta']
     for i, zone in enumerate(st.session_state.zones):
