@@ -123,7 +123,8 @@ def compute_unsafe_ratio(center, radius, map_name, map_width, map_height):
         return 0.0
 
     hm_height, hm_width = heatmap.shape
-    heatmap_ratio = hm_width / map_width  # Expected ~0.3516 for 1080/3072
+    # Conversion ratio from regular map (3072) to heatmap (1080)
+    heatmap_ratio = hm_width / map_width
 
     cx, cy = int(center[0]), int(center[1])
     rr = int(radius)
@@ -155,3 +156,122 @@ with st.sidebar:
     map_meter_size = get_map_meter_size(map_name)
     x = st.slider("X Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
     y = st.slider("Y Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
+    selected_phase = st.selectbox("Which phase are you placing?", list(range(1, 10)))
+    avoid_red_zones = st.checkbox("Avoid red heatmap zones (All maps supported)", value=True)
+
+    if st.button("Set Zone"):
+        radius = get_scaled_radius(map_name, selected_phase)
+        img_x = world_to_image(x, map_name)
+        img_y = world_to_image(y, map_name)
+        while len(st.session_state.zones) < selected_phase:
+            st.session_state.zones.append(None)
+        st.session_state.zones[selected_phase - 1] = ((img_x, img_y), radius)
+
+    if st.button("Reset Zones"):
+        st.session_state.zones = []
+
+    if st.button("Predict Next Zone"):
+        if any(st.session_state.zones):
+            map_img = Image.open(map_files[map_name]).convert('RGB')
+            img_array = np.array(map_img)
+            width, height = map_dimensions[map_name]  # 3072x3072
+
+            last_idx = max(i for i, z in enumerate(st.session_state.zones) if z is not None)
+            last_center, last_radius = st.session_state.zones[last_idx]
+            current_phase = last_idx + 2  # Next phase number
+            new_radius = get_scaled_radius(map_name, current_phase)
+
+            best_candidate = None
+
+            # For phases before 4 (Z1→Z2 or Z2→Z3), simply take the first candidate that passes.
+            if current_phase < 4:
+                for attempt in range(30):
+                    center_bias_x = width / 2 - last_center[0]
+                    center_bias_y = height / 2 - last_center[1]
+                    bias_strength = 0.25 if current_phase <= 3 else 0.0
+                    shift_bias = (
+                        random.uniform(-1, 1) + bias_strength * center_bias_x / width,
+                        random.uniform(-1, 1) + bias_strength * center_bias_y / height
+                    )
+                    norm = math.hypot(*shift_bias)
+                    shift_dir = (shift_bias[0] / norm, shift_bias[1] / norm)
+                    max_shift = last_radius * (0.4 if current_phase <= 4 else 0.6)
+                    shift_dist = random.uniform(0.3, 1.0) * max_shift
+
+                    shift_x = shift_dist * shift_dir[0]
+                    shift_y = shift_dist * shift_dir[1]
+
+                    new_x = max(0, min(width, last_center[0] + shift_x))
+                    new_y = max(0, min(height, last_center[1] + shift_y))
+                    new_center = (new_x, new_y)
+
+                    if not is_zone_on_land(new_center, new_radius, img_array):
+                        continue
+
+                    # For phases before Z4, accept the first candidate that passes.
+                    best_candidate = (new_center, new_radius)
+                    break
+            else:
+                # For Z4 and later, evaluate 30 candidates and choose the one with the lowest red ratio.
+                best_ratio = float('inf')
+                for attempt in range(30):
+                    center_bias_x = width / 2 - last_center[0]
+                    center_bias_y = height / 2 - last_center[1]
+                    bias_strength = 0.25 if current_phase <= 3 else 0.0
+                    shift_bias = (
+                        random.uniform(-1, 1) + bias_strength * center_bias_x / width,
+                        random.uniform(-1, 1) + bias_strength * center_bias_y / height
+                    )
+                    norm = math.hypot(*shift_bias)
+                    shift_dir = (shift_bias[0] / norm, shift_bias[1] / norm)
+                    max_shift = last_radius * (0.4 if current_phase <= 4 else 0.6)
+                    shift_dist = random.uniform(0.3, 1.0) * max_shift
+
+                    shift_x = shift_dist * shift_dir[0]
+                    shift_y = shift_dist * shift_dir[1]
+
+                    new_x = max(0, min(width, last_center[0] + shift_x))
+                    new_y = max(0, min(height, last_center[1] + shift_y))
+                    new_center = (new_x, new_y)
+
+                    if not is_zone_on_land(new_center, new_radius, img_array):
+                        continue
+
+                    unsafe_ratio = compute_unsafe_ratio(new_center, new_radius, map_name, width, height)
+                    if unsafe_ratio < best_ratio:
+                        best_ratio = unsafe_ratio
+                        best_candidate = (new_center, new_radius)
+
+            if best_candidate is not None:
+                while len(st.session_state.zones) < current_phase:
+                    st.session_state.zones.append(None)
+                st.session_state.zones[current_phase - 1] = best_candidate
+
+# Display Map and Circles
+fig, ax = plt.subplots(figsize=(8, 8))
+map_path = map_files[map_name]
+map_meter_size = get_map_meter_size(map_name)
+
+if os.path.exists(map_path):
+    map_img = Image.open(map_path)
+    ax.imshow(map_img, extent=[0, map_meter_size, map_meter_size, 0])
+    ax.set_xlim(0, map_meter_size)
+    ax.set_ylim(map_meter_size, 0)
+
+    colors = ['blue', 'green', 'orange', 'red', 'purple', 'black', 'cyan', 'magenta']
+    for i, zone in enumerate(st.session_state.zones):
+        if zone is None:
+            continue
+        center_px, radius_px = zone
+        cx = image_to_world(center_px[0], map_name)
+        cy = image_to_world(center_px[1], map_name)
+        radius_m = image_to_world(radius_px, map_name)
+        circle = patches.Circle((cx, cy), radius_m, fill=False, linewidth=2, edgecolor=colors[i % len(colors)])
+        ax.add_patch(circle)
+        ax.text(cx, cy, f'Z{i+1}', color=colors[i % len(colors)],
+                fontsize=10, ha='center', va='center', weight='bold')
+
+    ax.set_title(f"{map_name} - Zones")
+    st.pyplot(fig)
+else:
+    st.error(f"Map image not found: {map_path}")
