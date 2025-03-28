@@ -2,11 +2,10 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from PIL import Image
+import random
+import math
 import os
 import numpy as np
-
-# Constants
-WORLD_SIZE = 8000  # in-game meters for 8x8 maps
 
 # Map metadata and file paths
 map_files = {
@@ -19,6 +18,7 @@ map_files = {
     "Rondo": "Rondo_Main_High_Res.png"
 }
 
+# These are the image pixel dimensions
 map_dimensions = {
     "Erangel": (3072, 3072),
     "Miramar": (3072, 3072),
@@ -33,6 +33,7 @@ maps_8x8 = ["Erangel", "Miramar", "Deston", "Taego", "Rondo"]
 maps_6x6 = ["Vikendi"]
 maps_4x4 = ["Sanhok"]
 
+# Radii per phase in in‑game meters (from official PUBG specs)
 radius_by_phase = {
     "8x8": [1997.05, 1198.25, 659.05, 362.45, 181.25, 90.6, 45.3, 22.65, 0],
     "6x6": [1502.3, 901.4, 495.75, 272.65, 136.35, 68.15, 34.1, 17.05, 0],
@@ -40,7 +41,7 @@ radius_by_phase = {
 }
 
 def get_map_meter_size(map_name):
-    # Return the in-game size in meters based on the map type.
+    # In-game map sizes in meters
     return 8000 if map_name in maps_8x8 else 6000 if map_name in maps_6x6 else 4000
 
 def get_radius(map_name, phase):
@@ -48,6 +49,7 @@ def get_radius(map_name, phase):
     return radius_by_phase[key][min(phase - 1, 8)]
 
 def get_scaled_radius(map_name, phase):
+    # Converts in-game radius (meters) to image pixels
     base_radius = get_radius(map_name, phase)
     map_meter_size = get_map_meter_size(map_name)
     pixel_width = map_dimensions[map_name][0]
@@ -89,30 +91,71 @@ try:
 except:
     pass
 
+# Functions to validate if a zone is on land / acceptable via heatmap
+def is_zone_on_land(center, radius, img_array):
+    cx, cy = int(center[0]), int(center[1])
+    rr = int(radius)
+    count = 0
+    water_count = 0
+    for dx in range(-rr, rr + 1, 10):
+        for dy in range(-rr, rr + 1, 10):
+            if dx**2 + dy**2 <= rr**2:
+                px = cx + dx
+                py = cy + dy
+                if 0 <= px < img_array.shape[1] and 0 <= py < img_array.shape[0]:
+                    r, g, b = img_array[py, px, :3]
+                    count += 1
+                    if b > 130 and b > r + 20 and b > g + 20:
+                        water_count += 1
+    return water_count / max(count, 1) < 0.15
+
+def is_zone_heatmap_acceptable(center, radius, map_name, map_width, map_height):
+    if map_name == "Erangel":
+        heatmap = erangel_heatmap
+    elif map_name == "Miramar":
+        heatmap = miramar_heatmap
+    else:
+        return True
+
+    if heatmap is None:
+        return True
+
+    cx, cy = int(center[0]), int(center[1])
+    rr = int(radius)
+    heatmap_h, heatmap_w = heatmap.shape
+    score_sum = 0
+    count = 0
+    for dx in range(-rr, rr + 1, 10):
+        for dy in range(-rr, rr + 1, 10):
+            if dx**2 + dy**2 <= rr**2:
+                px = cx + dx
+                py = cy + dy
+                if 0 <= px < map_width and 0 <= py < map_height:
+                    hx = int((px / map_width) * heatmap_w)
+                    hy = int((py / map_height) * heatmap_h)
+                    if 0 <= hx < heatmap_w and 0 <= hy < heatmap_h:
+                        heatmap_score = 1.0 - heatmap[hy, hx]
+                        score_sum += heatmap_score
+                        count += 1
+    avg_score = score_sum / max(count, 1)
+    return avg_score > 0.3
+
+# Initialize session state for zones if not already set
 if 'zones' not in st.session_state:
     st.session_state.zones = []
 
+# Sidebar controls
 with st.sidebar:
     st.title("PUBG Zone Predictor")
     map_name = st.selectbox("Select Map", list(map_files.keys()))
-
     map_meter_size = get_map_meter_size(map_name)
     x = st.slider("X Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
     y = st.slider("Y Coordinate (meters)", 0, map_meter_size, map_meter_size // 2)
     selected_phase = st.selectbox("Which phase are you placing?", list(range(1, 10)))
     avoid_red_zones = st.checkbox("Avoid red heatmap zones (All maps supported)", value=True)
 
-    heatmap_ready = avoid_red_zones and (
-        (map_name == "Erangel" and erangel_heatmap is not None) or
-        (map_name == "Miramar" and miramar_heatmap is not None) or
-        (map_name == "Vikendi" and vikendi_heatmap is not None) or
-        (map_name == "Taego" and taego_heatmap is not None)
-    )
-    ml_color = "green" if heatmap_ready else "red"
-    ml_status = f"<span style='color:{ml_color}; font-weight:bold;'>🧠 Machine learning: {'activated' if heatmap_ready else 'deactivated'}</span>"
-    st.markdown(ml_status, unsafe_allow_html=True)
-
     if st.button("Set Zone"):
+        # Convert in-game meters to image pixel coordinates before storing
         radius = get_scaled_radius(map_name, selected_phase)
         img_x = world_to_image(x, map_name)
         img_y = world_to_image(y, map_name)
@@ -123,6 +166,49 @@ with st.sidebar:
     if st.button("Reset Zones"):
         st.session_state.zones = []
 
+    if st.button("Predict Next Zone"):
+        if any(st.session_state.zones):
+            # Open the map image in RGB mode for pixel analysis
+            map_img = Image.open(map_files[map_name]).convert('RGB')
+            img_array = np.array(map_img)
+            width, height = map_dimensions[map_name]  # image pixel dimensions
+
+            # Find the last zone that was set (in pixel coordinates)
+            last_idx = max(i for i, z in enumerate(st.session_state.zones) if z is not None)
+            last_center, last_radius = st.session_state.zones[last_idx]
+            current_phase = last_idx + 2  # next phase
+            new_radius = get_scaled_radius(map_name, current_phase)
+
+            for attempt in range(30):
+                center_bias_x = width / 2 - last_center[0]
+                center_bias_y = height / 2 - last_center[1]
+                bias_strength = 0.25 if current_phase <= 3 else 0.0
+                shift_bias = (random.uniform(-1, 1) + bias_strength * center_bias_x / width,
+                              random.uniform(-1, 1) + bias_strength * center_bias_y / height)
+                norm = math.hypot(*shift_bias)
+                shift_dir = (shift_bias[0] / norm, shift_bias[1] / norm)
+
+                max_shift = last_radius * (0.4 if current_phase <= 4 else 0.6)
+                shift_dist = random.uniform(0.3, 1.0) * max_shift
+
+                shift_x = shift_dist * shift_dir[0]
+                shift_y = shift_dist * shift_dir[1]
+
+                new_x = max(0, min(width, last_center[0] + shift_x))
+                new_y = max(0, min(height, last_center[1] + shift_y))
+                new_center = (new_x, new_y)
+
+                land_ok = is_zone_on_land(new_center, new_radius, img_array)
+                heatmap_ok = True
+                if map_name in ["Erangel", "Miramar"] and avoid_red_zones and current_phase >= 4:
+                    heatmap_ok = is_zone_heatmap_acceptable(new_center, new_radius, map_name, width, height)
+
+                if land_ok and heatmap_ok:
+                    while len(st.session_state.zones) < current_phase:
+                        st.session_state.zones.append(None)
+                    st.session_state.zones[current_phase - 1] = (new_center, new_radius)
+                    break
+
 # Display Map and Circles
 fig, ax = plt.subplots(figsize=(8, 8))
 map_path = map_files[map_name]
@@ -130,7 +216,7 @@ map_meter_size = get_map_meter_size(map_name)
 
 if os.path.exists(map_path):
     map_img = Image.open(map_path)
-    # Set the image extent using in-game meters
+    # Display the image using in-game meter coordinates for the axes
     ax.imshow(map_img, extent=[0, map_meter_size, map_meter_size, 0])
     ax.set_xlim(0, map_meter_size)
     ax.set_ylim(map_meter_size, 0)
@@ -140,6 +226,7 @@ if os.path.exists(map_path):
         if zone is None:
             continue
         center_px, radius_px = zone
+        # Convert the stored pixel coordinates back to in-game meters for display
         cx = image_to_world(center_px[0], map_name)
         cy = image_to_world(center_px[1], map_name)
         radius_m = image_to_world(radius_px, map_name)
